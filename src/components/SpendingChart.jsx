@@ -7,18 +7,19 @@ Chart.register(DoughnutController, ArcElement, Tooltip);
 
 const CATEGORIES = [
   { key: 'fixed', label: 'Despesas fixas', color: '#28634f' },
+  { key: 'variableTotal', label: 'Despesas variáveis', color: '#7b89b4' },
   { key: 'groceryTotal', label: 'Feira do mês', color: '#a8c77e' },
   { key: 'depositTotal', label: 'Aportes em metas', color: '#eab57a' },
 ];
 
-export default function SpendingChart({ summary: { fixed, groceryTotal, depositTotal } }) {
+export default function SpendingChart({ summary: { fixed, variableTotal, groceryTotal, depositTotal } }) {
   const canvas = useRef(null);
   const [hidden, setHidden] = useState([]);
   const series = useMemo(() => {
-    const amounts = { fixed, groceryTotal, depositTotal };
-    return CATEGORIES.map((category) => ({ ...category, amount: amounts[category.key] }));
-  }, [fixed, groceryTotal, depositTotal]);
-  const total = fixed + groceryTotal + depositTotal;
+    const amounts = { fixed, variableTotal, groceryTotal, depositTotal };
+    return CATEGORIES.filter(({ key }) => key !== 'variableTotal' || variableTotal > 0).map((category) => ({ ...category, amount: amounts[category.key] }));
+  }, [fixed, variableTotal, groceryTotal, depositTotal]);
+  const total = fixed + variableTotal + groceryTotal + depositTotal;
   const active = useMemo(() => series.filter((item) => !hidden.includes(item.key)), [series, hidden]);
   const shown = active.reduce((sum, item) => sum + item.amount, 0);
 
@@ -71,7 +72,7 @@ export default function SpendingChart({ summary: { fixed, groceryTotal, depositT
 
   return (
     <section className="card cash-card chart-card" aria-label="Distribuição dos gastos">
-      <PanelTitle title="Distribuição dos gastos" description="Contas, feira e aportes do mês." />
+      <PanelTitle title="Distribuição dos gastos" description="Despesas, feira e aportes do mês." />
       {total === 0 ? (
         <EmptyState icon="pie-chart" title="Sem gastos registrados">Os gastos do mês aparecem aqui depois do primeiro lançamento.</EmptyState>
       ) : (

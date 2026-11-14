@@ -67,6 +67,7 @@ function Activity({ summary, currentDate }) {
     ...(summary.salary ? [{ id: 'salary', title: 'Salário mensal', amount: summary.salary, date: summary.period + '-01', type: 'Renda', icon: 'wallet2', tone: 'income' }] : []),
     ...summary.income.map((item) => ({ ...item, type: 'Renda extra', icon: 'wallet2', tone: 'income' })),
     ...summary.bills.map((item) => ({ ...item, type: 'Despesa fixa', icon: 'receipt', tone: 'bill' })),
+    ...summary.variableBills.map((item) => ({ ...item, type: 'Despesa variável', icon: 'bag', tone: 'bill' })),
     ...summary.groceries.map((item) => ({ ...item, type: 'Feira', icon: 'basket2', tone: 'grocery' })),
     ...summary.deposits.map((item) => ({ ...item, type: 'Aporte', icon: 'bullseye', tone: 'goal' })),
   ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);

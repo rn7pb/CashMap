@@ -65,46 +65,80 @@ export function Income({ summary, onEdit, onDelete, isExample }) {
   );
 }
 
-export function Bills({ summary, onEdit, onDelete, onToggle, currentDate, isExample }) {
+export function Bills({ summary, onEdit, onDelete, onToggle, currentDate, isExample, view, onViewChange }) {
   const [filter, setFilter] = useState('all');
-  const bills = summary.bills.filter((bill) => filter === 'all' || bill.status === filter)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const variable = view === 'variable';
+  const kind = variable ? 'variable' : 'bill';
+  const bills = (variable ? summary.variableBills : summary.bills.filter((bill) => filter === 'all' || bill.status === filter))
+    .slice().sort((a, b) => a.date.localeCompare(b.date));
 
   return (
     <>
+      <div className="d-flex flex-wrap gap-2 mb-3" role="group" aria-label="Tipo de despesa">
+        <button type="button" className={'btn ' + (variable ? 'btn-outline-cash' : 'btn-cash')}
+          aria-pressed={!variable} onClick={() => onViewChange('fixed')}>Fixas</button>
+        <button type="button" className={'btn ' + (variable ? 'btn-cash' : 'btn-outline-cash')}
+          aria-pressed={variable} onClick={() => onViewChange('variable')}>Variáveis</button>
+      </div>
       <div className="section-totals">
-        <Total label="Total de contas" value={money(summary.fixed)} icon="receipt" tone="bill" />
-        <Total label="Contas pagas" value={money(summary.paid)} icon="check-circle" />
-        <Total label="Contas pendentes" value={money(summary.pending)} icon="clock" tone="goal" />
+        {variable ? (
+          <Total label="Despesas variáveis do mês" value={money(summary.variableTotal)} icon="bag" tone="bill" />
+        ) : (
+          <>
+            <Total label="Total de contas fixas" value={money(summary.fixed)} icon="receipt" tone="bill" />
+            <Total label="Contas pagas" value={money(summary.paid)} icon="check-circle" />
+            <Total label="Contas pendentes" value={money(summary.pending)} icon="clock" tone="goal" />
+          </>
+        )}
       </div>
       <section className="card cash-card section-panel">
-        <PanelTitle title="Contas do mês" description="Acompanhe vencimentos e marque os pagamentos.">
-          <select className="form-select filter-select" value={filter} aria-label="Filtrar despesas por status"
-            onChange={(event) => setFilter(event.target.value)}>
-            <option value="all">Todas as contas</option><option value="paid">Pagas</option><option value="pending">Pendentes</option>
-          </select>
+        <PanelTitle title={variable ? 'Despesas variáveis do mês' : 'Contas fixas do mês'}
+          description={variable ? 'Veja os gastos avulsos do período.' : 'Acompanhe vencimentos e marque os pagamentos.'}>
+          {!variable && (
+            <select className="form-select filter-select" value={filter} aria-label="Filtrar despesas por status"
+              onChange={(event) => setFilter(event.target.value)}>
+              <option value="all">Todas as contas</option><option value="paid">Pagas</option><option value="pending">Pendentes</option>
+            </select>
+          )}
         </PanelTitle>
         {bills.length === 0 ? (
-          <EmptyState icon="receipt" title={filter === 'all' ? 'Sem contas cadastradas neste mês' : 'Nenhuma conta com esse status'} />
+          <EmptyState icon="receipt" title={variable ? 'Sem despesas variáveis neste mês'
+            : filter === 'all' ? 'Sem contas cadastradas neste mês' : 'Nenhuma conta com esse status'} />
         ) : (
           <div className="table-responsive">
             <table className="table cash-table bills-table">
               <thead>
-                <tr><th scope="col">Conta</th><th scope="col">Vencimento</th><th scope="col">Status</th><th scope="col" className="text-end">Valor</th>{!isExample && <th scope="col" className="text-end">Ações</th>}</tr>
+                <tr>
+                  <th scope="col">{variable ? 'Despesa' : 'Conta'}</th>
+                  <th scope="col">Data</th>
+                  {!variable && <th scope="col">Status</th>}
+                  <th scope="col" className="text-end">Valor</th>
+                  {!isExample && <th scope="col" className="text-end">Ações</th>}
+                </tr>
               </thead>
               <tbody>
                 {bills.map((bill) => (
                   <tr key={bill.id}>
                     <th scope="row"><strong>{bill.title}</strong><small className="d-block table-secondary">{bill.category}</small></th>
-                    <td>{dateLabel(bill.date)}</td>
-                    <td><Status status={bill.status} date={bill.date} currentDate={currentDate} /></td>
+                    <td>
+                      {dateLabel(bill.date)}
+                      {!variable && <small className="d-block table-secondary">
+                        {bill.bankImport && !bill.paymentDate ? 'Data do extrato' : 'Vencimento'}
+                      </small>}
+                      {bill.paymentDate && bill.status === 'paid' && (
+                        <small className="d-block table-secondary">Pago em {dateLabel(bill.paymentDate)}</small>
+                      )}
+                    </td>
+                    {!variable && <td><Status status={bill.status} date={bill.date} currentDate={currentDate} /></td>}
                     <td className="text-end amount-cell">{money(bill.amount)}</td>
                     {!isExample && (
                       <td className="text-end actions-cell">
-                        <IconButton icon={bill.status === 'paid' ? 'arrow-counterclockwise' : 'check2-circle'}
-                          label={(bill.status === 'paid' ? 'Marcar como pendente: ' : 'Marcar como paga: ') + bill.title}
-                          onClick={() => onToggle(bill)} />
-                        <RecordActions name={bill.title} edit={() => onEdit('bill', bill)} remove={() => onDelete('bill', bill)} />
+                        {!variable && (
+                          <IconButton icon={bill.status === 'paid' ? 'arrow-counterclockwise' : 'check2-circle'}
+                            label={(bill.status === 'paid' ? 'Marcar como pendente: ' : 'Marcar como paga: ') + bill.title}
+                            onClick={() => onToggle(bill)} />
+                        )}
+                        <RecordActions name={bill.title} edit={() => onEdit(kind, bill)} remove={() => onDelete(kind, bill)} />
                       </td>
                     )}
                   </tr>

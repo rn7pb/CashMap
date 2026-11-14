@@ -45,7 +45,7 @@ export function Status({ status, date, currentDate }) {
   return <span className="status status-pending">Pendente</span>;
 }
 
-export function Modal({ title, description, onClose, locked = false, wide = false, children }) {
+export function Modal({ title, description, onClose, locked = false, wide = false, className = '', children }) {
   const dialog = useRef(null);
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function Modal({ title, description, onClose, locked = false, wide = fals
   }, []);
 
   return (
-    <dialog ref={dialog} className={'cash-dialog' + (wide ? ' cash-dialog-wide' : '')}
+    <dialog ref={dialog} className={['cash-dialog', wide && 'cash-dialog-wide', className].filter(Boolean).join(' ')}
       aria-labelledby="modal-title" onCancel={(event) => {
         event.preventDefault();
         if (!locked) onClose();

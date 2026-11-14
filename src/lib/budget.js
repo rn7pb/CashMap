@@ -2,6 +2,10 @@ export const FIXED_CATEGORIES = [
   'Moradia', 'Energia', 'Água', 'Internet e telefone', 'Transporte', 'Saúde', 'Educação', 'Assinaturas', 'Outros',
 ];
 
+export const VARIABLE_CATEGORIES = [
+  'Alimentação', 'Transporte', 'Saúde', 'Lazer', 'Compras', 'Taxas bancárias', 'Outros',
+];
+
 export const GROCERY_CATEGORIES = [
   'Carnes', 'Hortifrúti', 'Mercearia', 'Laticínios', 'Limpeza', 'Higiene', 'Outros',
 ];
@@ -161,7 +165,8 @@ export function summarize(budget, period, currentDate = today()) {
   const salary = budget.salaries[period] ?? 0;
   const inMonth = (record) => record.date.slice(0, 7) === period;
   const income = budget.income.filter(inMonth);
-  const bills = budget.bills.filter(inMonth);
+  const bills = budget.bills.filter((bill) => !bill.variable && inMonth(bill));
+  const variableBills = budget.bills.filter((bill) => bill.variable && inMonth(bill));
   const groceries = budget.groceries.filter(inMonth);
   const deposits = budget.goals.flatMap((goal) => goal.deposits.filter(inMonth)
     .map((deposit) => ({ ...deposit, goalId: goal.id, title: goal.name })));
@@ -169,12 +174,14 @@ export function summarize(budget, period, currentDate = today()) {
   const paid = sum(bills.filter((bill) => bill.status === 'paid'));
   const fixed = sum(bills);
   const pending = fixed - paid;
+  const variableTotal = sum(variableBills);
   const groceryTotal = sum(groceries);
   const depositTotal = sum(deposits);
-  const free = incomeTotal - fixed - groceryTotal - depositTotal;
+  const free = incomeTotal - fixed - variableTotal - groceryTotal - depositTotal;
 
   return {
-    period, salary, income, bills, groceries, deposits, incomeTotal, fixed, paid, pending, groceryTotal, depositTotal, free,
+    period, salary, income, bills, variableBills, groceries, deposits, incomeTotal, fixed, paid, pending,
+    variableTotal, groceryTotal, depositTotal, free,
     average: groceryAverage(budget.groceries, period, currentDate),
     goals: budget.goals.map((goal) => ({ ...goal, ...goalProgress(goal, free) })),
   };
@@ -199,7 +206,7 @@ export function tipsFor(summary, currentDate = today()) {
   if (summary.free < 0) {
     tips.push({
       tone: 'alert', icon: 'graph-down-arrow', title: 'Orçamento acima da renda',
-      detail: `Faltam ${money(-summary.free)} para cobrir as contas, a feira e os aportes registrados neste mês. Revise os valores antes de assumir novos gastos.`,
+      detail: `Faltam ${money(-summary.free)} para cobrir as despesas, a feira e os aportes registrados neste mês. Revise os valores antes de assumir novos gastos.`,
     });
   }
 

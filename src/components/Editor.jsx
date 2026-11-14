@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  amountInput, defaultDate, FIXED_CATEGORIES, GROCERY_CATEGORIES, id, itemTotal, lastDay, money, monthLabel, parseAmount, parseQuantity, purchaseTotal, requiredDate, requiredText,
+  amountInput, defaultDate, FIXED_CATEGORIES, GROCERY_CATEGORIES, id, itemTotal, lastDay, money, monthLabel, parseAmount, parseQuantity, purchaseTotal, requiredDate, requiredText, VARIABLE_CATEGORIES,
 } from '../lib/budget';
 import { simulateReceipt } from '../lib/receipt';
 import { AmountField, Icon, IconButton, Modal, TextField } from './UI';
@@ -9,6 +9,7 @@ const FORMS = {
   salary: ['Cadastrar salário', 'Editar salário'],
   income: ['Nova renda extra', 'Editar renda extra'],
   bill: ['Nova despesa fixa', 'Editar despesa fixa'],
+  variable: ['Nova despesa variável', 'Editar despesa variável'],
   grocery: ['Nova compra', 'Editar compra'],
   goal: ['Nova meta', 'Editar meta'],
   deposit: ['Registrar aporte', 'Editar aporte'],
@@ -24,7 +25,7 @@ function initialValues(record, kind, period) {
     amount: amountInput(kind === 'goal' ? record?.target : record?.amount),
     initial: amountInput(record?.initial),
     date: record?.date ?? defaultDate(period),
-    category: record?.category ?? FIXED_CATEGORIES[0],
+    category: record?.category ?? (kind === 'variable' ? VARIABLE_CATEGORIES[0] : FIXED_CATEGORIES[0]),
     status: record?.status ?? 'pending',
     items: record?.items?.map(itemFields) ?? [],
   };
@@ -189,6 +190,7 @@ export default function Editor({ config, onClose, onSave }) {
     if (kind === 'goal') return { name: title, target: amount, initial: parseAmount(values.initial || '0', 'valor já guardado', true) };
     if (kind === 'deposit') return { amount, date };
     if (kind === 'bill') return { title, amount, date, category: values.category, status: values.status };
+    if (kind === 'variable') return { title, amount, date, category: values.category, status: 'paid', variable: true };
     if (isPurchase) return { title, amount, date, items };
     return { title, amount, date };
   }
@@ -222,7 +224,7 @@ export default function Editor({ config, onClose, onSave }) {
           <div className="editor-fields">
             {hasTitle && <div className="editor-full">
               <TextField id="record-title" label={kind === 'goal' ? 'Nome da meta' : 'Descrição'} value={values.title}
-                required maxLength={85} autoFocus={!scan} placeholder={kind === 'goal' ? 'Reserva de emergência' : undefined}
+                required maxLength={record?.bankImport ? 150 : 85} autoFocus={!scan} placeholder={kind === 'goal' ? 'Reserva de emergência' : undefined}
                 onChange={(event) => patch('title', event.target.value)} />
             </div>}
             {hasItems ? <div className="calculated-amount"><span>Total calculado</span><strong>{calculated === null ? '—' : money(calculated)}</strong></div> : (
@@ -230,15 +232,17 @@ export default function Editor({ config, onClose, onSave }) {
                 value={values.amount} required={!isPurchase} autoFocus={!hasTitle}
                 onChange={(event) => patch('amount', event.target.value)} />
             )}
-            {hasDate && <TextField type="date" id="record-date" label={kind === 'bill' ? 'Vencimento' : 'Data'}
+            {hasDate && <TextField type="date" id="record-date" label={kind === 'bill' && (!record?.bankImport || record.paymentDate) ? 'Vencimento' : 'Data'}
               value={values.date} required min={period + '-01'} max={lastDay(period)}
               onChange={(event) => patch('date', event.target.value)} />}
-            {kind === 'bill' && <>
-              <Select id="record-category" label="Categoria" options={FIXED_CATEGORIES} value={values.category}
-                onChange={(event) => patch('category', event.target.value)} />
+            {['bill', 'variable'].includes(kind) && (
+              <Select id="record-category" label="Categoria" options={kind === 'variable' ? VARIABLE_CATEGORIES : FIXED_CATEGORIES}
+                value={values.category} onChange={(event) => patch('category', event.target.value)} />
+            )}
+            {kind === 'bill' && (
               <Select id="record-status" label="Status" options={[[ 'pending', 'Pendente' ], [ 'paid', 'Pago' ]]} value={values.status}
                 onChange={(event) => patch('status', event.target.value)} />
-            </>}
+            )}
             {kind === 'goal' && <AmountField id="record-initial" label="Valor já guardado" value={values.initial}
               onChange={(event) => patch('initial', event.target.value)} />}
           </div>

@@ -78,6 +78,7 @@ export async function downloadReport(summary, tips, currentDate, isExample) {
     ['Contas fixas pagas', money(summary.paid)],
     ['Contas fixas pendentes', money(summary.pending)],
     ['Total de despesas fixas', money(summary.fixed)],
+    ['Despesas variáveis', money(summary.variableTotal)],
     ['Compras de feira', money(summary.groceryTotal)],
     ['Média móvel da feira', average],
     ['Aportes em metas no mês', money(summary.depositTotal)],
@@ -87,12 +88,18 @@ export async function downloadReport(summary, tips, currentDate, isExample) {
   table('Rendas extras', ['Descrição', 'Data', 'Valor'],
     sorted(summary.income).map((entry) => [entry.title, dateLabel(entry.date), money(entry.amount)]),
     'Sem rendas extras neste mês.');
-  table('Despesas fixas', ['Conta', 'Categoria', 'Vencimento', 'Status', 'Valor'],
+  table('Despesas fixas', ['Conta', 'Categoria', 'Data', 'Status', 'Valor'],
     sorted(summary.bills).map((bill) => [
-      bill.title, bill.category, dateLabel(bill.date),
+      bill.title, bill.category,
+      bill.bankImport && !bill.paymentDate ? dateLabel(bill.date) + ' (extrato)'
+        : dateLabel(bill.date) + (bill.paymentDate && bill.status === 'paid' ? '\nPago em ' + dateLabel(bill.paymentDate) : ''),
       bill.status === 'paid' ? 'Pago' : bill.date < currentDate ? 'Pendente (vencida)' : 'Pendente',
       money(bill.amount),
     ]), 'Sem despesas fixas neste mês.');
+  if (summary.variableBills.length) {
+    table('Despesas variáveis', ['Descrição', 'Categoria', 'Data', 'Valor'],
+      sorted(summary.variableBills).map((bill) => [bill.title, bill.category, dateLabel(bill.date), money(bill.amount)]));
+  }
   table('Compras de feira', ['Compra', 'Data', 'Itens', 'Total'],
     sorted(summary.groceries).map((purchase) => [
       purchase.title, dateLabel(purchase.date), number(purchase.items.length), money(purchase.amount),

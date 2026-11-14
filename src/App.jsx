@@ -4,29 +4,33 @@ import Dashboard, { TipList } from './components/Dashboard';
 import Editor from './components/Editor';
 import Goals from './components/Goals';
 import Groceries from './components/Groceries';
+import StatementImport from './components/StatementImport';
 import { Icon, IconButton, Modal, PanelTitle, TextField } from './components/UI';
 import { useBudget } from './hooks/useBudget';
-import { money, monthLabel, saveRecord, shiftMonth, summarize, tipsFor, today } from './lib/budget';
+import { money, monthLabel, number, saveRecord, shiftMonth, summarize, tipsFor, today } from './lib/budget';
+import { applyStatementImport } from './lib/statementImport';
 
 const SCREENS = [
   { key: 'visao-geral', label: 'Visão geral', icon: 'grid-1x2', description: 'Acompanhe seu orçamento doméstico e planeje o que sobra.' },
   { key: 'rendas', label: 'Rendas', icon: 'wallet2', description: 'Cadastre seu salário e acompanhe as outras entradas do mês.', action: ['income', 'Nova renda extra'] },
-  { key: 'despesas', label: 'Despesas fixas', icon: 'receipt', description: 'Organize as contas de casa, os vencimentos e os pagamentos.', action: ['bill', 'Nova despesa'] },
+  { key: 'despesas', label: 'Despesas', icon: 'receipt', description: 'Organize contas fixas, pagamentos e gastos avulsos.', action: ['bill', 'Nova despesa fixa'] },
   { key: 'feira', label: 'Feira do mês', icon: 'basket2', description: 'Registre suas compras e estime quanto reservar para o supermercado.', action: ['grocery', 'Nova compra'] },
   { key: 'metas', label: 'Cofrinho', icon: 'piggy-bank', description: 'Acompanhe seus objetivos e registre quanto guardou.', action: ['goal', 'Nova meta'] },
   { key: 'assistente', label: 'Assistente de economia', icon: 'lightbulb', description: 'Dicas automáticas geradas pelos lançamentos do mês selecionado.' },
 ];
 
 const LAUNCHERS = [
+  ['statement', 'bank', 'Importar extrato bancário'],
   ['salary', 'wallet2', 'Salário mensal'],
   ['income', 'plus-circle', 'Renda extra'],
   ['bill', 'receipt', 'Despesa fixa'],
+  ['variable', 'bag', 'Despesa variável'],
   ['grocery', 'basket2', 'Compra de feira'],
   ['goal', 'bullseye', 'Meta de economia'],
   ['scan', 'upc-scan', 'Escanear nota fiscal'],
 ];
 
-const LISTS = { income: 'income', bill: 'bills', grocery: 'groceries', goal: 'goals' };
+const LISTS = { income: 'income', bill: 'bills', variable: 'bills', grocery: 'groceries', goal: 'goals' };
 const MIN_MONTH = '1900-01';
 const MAX_MONTH = '2100-12';
 
@@ -39,7 +43,7 @@ function Sidebar({ screen, open, close, restoreFocus, closeButton }) {
     <>
       {open && <button type="button" className="sidebar-backdrop" onClick={restoreFocus} aria-label="Fechar menu lateral" tabIndex={-1} />}
       <aside className={'sidebar' + (open ? ' sidebar-open' : '')} id="cashmap-navigation">
-        <a href="#visao-geral" className="brand" onClick={close}>
+        <a href="#visao-geral" className="brand" onClick={() => close('visao-geral')}>
           <img src={import.meta.env.BASE_URL + 'cashmap-icon.svg'} alt="" width="44" height="44" />
           <span>CashMap</span>
         </a>
@@ -49,7 +53,7 @@ function Sidebar({ screen, open, close, restoreFocus, closeButton }) {
         <nav className="nav nav-pills flex-column sidebar-links" aria-label="Menu principal">
           {SCREENS.map((item) => (
             <a className={'nav-link' + (screen.key === item.key ? ' active' : '')} key={item.key}
-              href={'#' + item.key} aria-current={screen.key === item.key ? 'page' : undefined} onClick={close}>
+              href={'#' + item.key} aria-current={screen.key === item.key ? 'page' : undefined} onClick={() => close(item.key)}>
               <Icon name={item.icon} /><span>{item.label}</span>
             </a>
           ))}
@@ -164,7 +168,10 @@ function saveChange(budget, config, record) {
     return { ...budget, goals: saveRecord(budget.goals, { deposits }, goal.id) };
   }
   const list = LISTS[kind];
-  const entry = kind === 'goal' && !previous ? { ...record, deposits: [] } : record;
+  let entry = kind === 'goal' && !previous ? { ...record, deposits: [] } : record;
+  if (kind === 'bill' && record.status === 'pending' && budget.bills.find(({ id }) => id === previous?.id)?.paymentDate) {
+    entry = { ...entry, paymentDate: null, bankImport: null };
+  }
   return { ...budget, [list]: saveRecord(budget[list], entry, previous?.id) };
 }
 
@@ -185,6 +192,7 @@ export default function App() {
   const [currentDate, setCurrentDate] = useState(today);
   const [period, setPeriod] = useState(() => today().slice(0, 7));
   const [screen, setScreen] = useState(getScreen);
+  const [billView, setBillView] = useState('fixed');
   const [drawer, setDrawer] = useState(false);
   const [modal, setModal] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -200,6 +208,7 @@ export default function App() {
   useEffect(() => {
     function navigate() {
       setScreen(getScreen());
+      setBillView('fixed');
       setDrawer(false);
       window.scrollTo({ top: 0, behavior: 'instant' });
       requestAnimationFrame(() => title.current?.focus({ preventScroll: true }));
@@ -247,6 +256,10 @@ export default function App() {
   function notify(text, error = false) { setNotice({ text, error }); }
   function close() { setModal(null); }
   function edit(kind, record = null, scan = false, goal = null) {
+    if (kind === 'statement') {
+      setModal({ type: 'statement' });
+      return;
+    }
     if (kind === 'salary' && !isExample && Object.hasOwn(budget.salaries, period)) record = { amount: summary.salary };
     setModal({ type: 'edit', kind, record, period, scan, goal });
   }
@@ -264,11 +277,36 @@ export default function App() {
   async function toggleBill(bill) {
     const status = bill.status === 'paid' ? 'pending' : 'paid';
     try {
-      await update((latest) => ({ ...latest, bills: saveRecord(latest.bills, { status }, bill.id) }));
+      await update((latest) => {
+        const current = latest.bills.find((record) => record.id === bill.id);
+        const patch = status === 'pending' && current?.paymentDate
+          ? { status, paymentDate: null, bankImport: null } : { status };
+        return { ...latest, bills: saveRecord(latest.bills, patch, bill.id) };
+      });
       notify(status === 'paid' ? 'Conta marcada como paga.' : 'Conta marcada como pendente.');
     } catch (error) {
       notify(error.message, true);
     }
+  }
+
+  async function importStatement(rows) {
+    let result;
+    await update((latest) => {
+      result = applyStatementImport(latest, rows);
+      return result.budget;
+    });
+
+    if (!result.count) {
+      notify('Esses lançamentos já foram importados.');
+      return;
+    }
+
+    if (!result.months.includes(period)) setPeriod(result.months.at(-1));
+    if (screen.key === 'despesas' && rows.some((row) => row.route === 'variable') &&
+        !rows.some((row) => ['fixed', 'match'].includes(row.route))) setBillView('variable');
+    const imported = number(result.count) + (result.count === 1 ? ' lançamento importado.' : ' lançamentos importados.');
+    const duplicates = result.repeated ? ' Duplicatas já importadas foram puladas.' : '';
+    notify(imported + duplicates);
   }
 
   async function exportPdf() {
@@ -288,10 +326,13 @@ export default function App() {
   }
 
   const moduleProps = { summary, onEdit: edit, onDelete: remove, isExample };
+  const action = screen.key === 'despesas' && billView === 'variable'
+    ? ['variable', 'Nova despesa variável'] : screen.action;
+  const showsImport = screen.key === 'visao-geral' || screen.key === 'despesas';
 
   return (
     <div className="app-shell">
-      <Sidebar screen={screen} open={drawer} close={() => { if (drawer) closeDrawer(); }}
+      <Sidebar screen={screen} open={drawer} close={(key) => { if (drawer && screen.key === key) closeDrawer(); }}
         restoreFocus={closeDrawer} closeButton={closeButton} />
       <div className="workspace" inert={drawer}>
         <header className="topbar">
@@ -317,8 +358,11 @@ export default function App() {
             <div><h1 ref={title} tabIndex={-1}>{screen.label}</h1><p>{screen.description}</p></div>
             <div className="page-actions">
               <MonthPicker period={period} onChange={setPeriod} open={() => setModal({ type: 'period' })} />
-              {screen.action && <button className="btn btn-cash" type="button" onClick={() => edit(screen.action[0])}>
-                <Icon name="plus-lg" />{screen.action[1]}
+              {showsImport && <button className="btn btn-outline-cash" type="button" onClick={() => edit('statement')}>
+                <Icon name="bank" />Importar extrato
+              </button>}
+              {action && <button className="btn btn-cash" type="button" onClick={() => edit(action[0])}>
+                <Icon name="plus-lg" />{action[1]}
               </button>}
             </div>
           </div>
@@ -329,7 +373,8 @@ export default function App() {
           </div>}
           {screen.key === 'visao-geral' && <Dashboard summary={summary} tips={tips} currentDate={currentDate} />}
           {screen.key === 'rendas' && <Income {...moduleProps} />}
-          {screen.key === 'despesas' && <Bills {...moduleProps} currentDate={currentDate} onToggle={toggleBill} />}
+          {screen.key === 'despesas' && <Bills {...moduleProps} currentDate={currentDate} onToggle={toggleBill}
+            view={billView} onViewChange={setBillView} />}
           {screen.key === 'feira' && <Groceries {...moduleProps} />}
           {screen.key === 'metas' && <Goals {...moduleProps} />}
           {screen.key === 'assistente' && <Assistant tips={tips} />}
@@ -347,9 +392,13 @@ export default function App() {
           </button>)}
         </div>
       </Modal>}
+      {modal?.type === 'statement' && <StatementImport budget={isExample ? null : budget} onClose={close} onImport={importStatement} />}
       {modal?.type === 'period' && <PeriodDialog period={period} currentMonth={currentMonth} onChange={setPeriod} onClose={close} />}
       {modal?.type === 'edit' && <Editor config={modal} onClose={close} onSave={async (record) => {
         await update((latest) => saveChange(latest, modal, record));
+        if (screen.key === 'despesas' && ['bill', 'variable'].includes(modal.kind)) {
+          setBillView(modal.kind === 'bill' ? 'fixed' : 'variable');
+        }
         notify('Lançamento salvo.');
       }} />}
       {modal?.type === 'delete' && <DeleteDialog config={modal} onClose={close} onConfirm={async () => {
